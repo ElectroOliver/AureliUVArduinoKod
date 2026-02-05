@@ -32,6 +32,8 @@ RtcDS3231<TwoWire> Rtc(Wire);
 
 unsigned long lastUpdate = 0;
 const unsigned long interval = 5000;
+unsigned long lastRtcPrint = 0;
+const unsigned long RtcPrintInterval = 500;
 
 // temporära koordinater som används för uppstart
 const float approxLat = 56.0528;
@@ -141,6 +143,37 @@ void setup() {
   myUV.setConversionTime(50);
 }
 
+void SetTimeFromSerial() { // Möjlighet för att ersätta nuvarande "Compile Tid" till den riktiga tiden (används mest för sekundvis). Behövs bara användas 1 gång, sedan sparas datan
+  if (Serial.available() >= 6) {
+    char input[7];
+    for (int i = 0; i < 6; i++) {
+      input[i] = Serial.read();
+    }
+    input[6] = '\0';
+
+    uint8_t hour = (input[0] - '0') * 10 + (input[1] - '0');
+    uint8_t minute = (input[2] - '0') * 10 + (input[3] - '0');
+    uint8_t second = (input[4] - '0') * 10 + (input[5] - '0');
+
+    RtcDateTime now = Rtc.GetDateTime();
+
+    RtcDateTime newTime(
+      now.Year(),
+      now.Month(),
+      now.Day(),
+      hour,
+      minute,
+      second
+    );
+
+    Rtc.SetDateTime(newTime);
+
+    Serial.println("Ny Tid Satt!");
+    printDateTime(newTime);
+    Serial.println();
+  }
+}
+
 void drawDisplay(gps_fix fix, RtcDateTime now, RtcTemperature temp, float uvi) { //OLED Display kod
   float lat = fix.valid.location ? fix.latitude() : 56.0528;
   float lon = fix.valid.location ? fix.longitude() : 16.6932;
@@ -203,10 +236,12 @@ void loop() {
   RtcDateTime now = Rtc.GetDateTime();
   RtcTemperature temp = Rtc.GetTemperature();
 
-  Serial.print("RTC tid: ");
-  printDateTime(now);
-  Serial.println();
-  delay(1000);
+  if (millis() - lastRtcPrint >= RtcPrintInterval) { // Printar RTC tiden i konsol med en delay på 100ms, denna delay påverkar inte andra saker
+    lastRtcPrint = millis();
+    Serial.print("RTC tid: ");
+    printDateTime(now);
+    Serial.println();
+  }
 
   if (millis() - lastUpdate >= interval) {
     lastUpdate = millis();
@@ -225,6 +260,7 @@ void loop() {
     Serial.println(uvi);
   }
   drawDisplay(fix, now, temp, uvi);
+  SetTimeFromSerial();
 }
 
 #define countof(a) (sizeof(a) / sizeof(a[0]))
@@ -240,7 +276,7 @@ void printDateTime(const RtcDateTime& dt) { // möjlighet för att printa ut tid
       dt.Year(),
       dt.Hour(),
       dt.Minute(),
-      dt.Second() );
+      dt.Second());
     Serial.print(datestring);
 }
 
