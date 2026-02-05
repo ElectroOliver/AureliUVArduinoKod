@@ -8,6 +8,7 @@ GPS - 3.3V, RX, TX
 UV Sensor - 3.3V, SDA, SCL
 RTC - 3.3V, SDA, SCL (ANVÄND EJ 32K och SQW ORSAKAR PROBLEM!)
 ARDUINO MÅSTE ANVÄNDAS MED EN SNABB DATA-USB KABEL - FUNGERAR EJ UTAN DATA-KABEL!
+OBS! För att ersätta tiden måste du använda dig av "NO LINE ENDING" i serial monitor och skriva tiden så här: "103200" för klockan 10:32:00
 */
 
 #include <NMEAGPS.h>
