@@ -82,7 +82,7 @@ bool wasError(const char* errorTopic = "") {
   return false;
 }
 
-void setup() {
+void setup() { // Första koden som kör
   Wire.begin();
   Wire.setClock(100000);
 
@@ -206,11 +206,11 @@ void drawDisplay(gps_fix fix, RtcDateTime now, RtcTemperature temp, float uvi) {
   display.print("|");
   if (uvi > 0) display.print("UV OK");
   else display.print("UV ?");
-
+  
   display.display();
 }
  
-void loop() {
+void loop() { // Kod som kör oändligt lång tid
   static gps_fix fix;
   static unsigned long lastUpdate = 0;
   static float uvi = 0;
