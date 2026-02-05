@@ -4,9 +4,9 @@ Koden används för AureliUV gymnasiearbete 2025-2026
 Viktig Information om koppling!:
 SDA/SCL Kopplingar MÅSTE vara ihop satta genom breadboard eller lödade pins!
 OLED Skärm - 5V, SDA, SCL
-GPS - 3.3V, RX, TX
+GPS - 3.3V, 8 (RX), 9 (TX)
 UV Sensor - 3.3V, SDA, SCL
-RTC - 3.3V, SDA, SCL (ANVÄND EJ 32K och SQW ORSAKAR PROBLEM!)
+RTC (DS3231) - 3.3V, SDA, SCL (ANVÄND EJ 32K och SQW ORSAKAR PROBLEM!)
 ARDUINO MÅSTE ANVÄNDAS MED EN SNABB DATA-USB KABEL - FUNGERAR EJ UTAN DATA-KABEL!
 OBS! För att ersätta tiden måste du använda dig av "NO LINE ENDING" i serial monitor och skriva tiden så här: "103200" för klockan 10:32:00
 */
@@ -90,7 +90,7 @@ void setup() { // Första koden som kör
   Wire.begin();
   Wire.setClock(100000);
 
-  Serial.begin(115200);
+  Serial.begin(115200); // Ställ in Serial Monitor för 115200 Baud, orsakar problem om SM är inställd på fel Baud
   gpsPort.begin(9600);
 
   Serial.print("kompilerat: ");
@@ -158,13 +158,13 @@ void SetTimeFromSerial() { // Möjlighet för att ersätta nuvarande "Compile Ti
       printDateTime(Rtc.GetDateTime());
       Serial.println();
 
-      input = ""; // reset
+      input = "";
     }
   }
 }
 
 
-void drawDisplay(RtcDateTime now, RtcTemperature temp, float uvi) { //OLED Display kod
+void drawDisplay(RtcDateTime now, RtcTemperature temp, float uvi) { // OLED Display kod
   char dtString[26];
   formatDateTime(now, dtString, sizeof(dtString));
 
@@ -201,7 +201,7 @@ void loop() { // Kod som kör oändligt lång tid
     gps.encode(gpsPort.read());
   }
 
-  if (gps.location.isUpdated()) {
+  if (gps.location.isUpdated()) { // Uppdaterar information om nuvarande koordinater
     currentLat = gps.location.lat();
     currentLon = gps.location.lng();
     gpsHasFix = true;
@@ -212,7 +212,7 @@ void loop() { // Kod som kör oändligt lång tid
     Serial.println(currentLon, 6);
   }
 
-  if (gps.satellites.isUpdated()) {
+  if (gps.satellites.isUpdated()) { // Uppdaterar information om nuvarande satelliter kopplade
     currentSats = gps.satellites.value();
     Serial.print("Satelliter: ");
     Serial.println(currentSats);
@@ -232,7 +232,7 @@ void loop() { // Kod som kör oändligt lång tid
     Serial.println();
   }
 
-  if (millis() - lastUpdate >= interval) {
+  if (millis() - lastUpdate >= interval) { // Delay på ca 50ms för UV-beräkning
     lastUpdate = millis();
     myUV.prepareMeasurement();
     delay(myUV.getConversionTimeMillis() + 5);
