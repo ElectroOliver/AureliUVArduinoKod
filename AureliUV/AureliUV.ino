@@ -1,5 +1,5 @@
 /*
-Kod skapat av Oliver Pelby för AureliUV
+Kod skapat av Oliver för AureliUV
 Koden används för AureliUV gymnasiearbete 2025-2026
 Viktig Information om koppling!:
 SDA/SCL Kopplingar MÅSTE vara ihop satta genom breadboard eller lödade pins!
