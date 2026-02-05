@@ -11,15 +11,16 @@ ARDUINO MÅSTE ANVÄNDAS MED EN SNABB DATA-USB KABEL - FUNGERAR EJ UTAN DATA-KAB
 OBS! För att ersätta tiden måste du använda dig av "NO LINE ENDING" i serial monitor och skriva tiden så här: "103200" för klockan 10:32:00
 */
 
-#include <NMEAGPS.h>
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include <RtcDS3231.h>
 #include <SparkFun_AS7331.h>
 
-#define gpsPort Serial1
-NMEAGPS gps;
+SoftwareSerial gpsPort(8, 9); // RX, TX
+TinyGPSPlus gps;
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -37,8 +38,11 @@ unsigned long lastRtcPrint = 0;
 const unsigned long RtcPrintInterval = 500;
 
 // temporära koordinater som används för uppstart
-const float approxLat = 56.0528;
-const float approxLon = 12.6932;
+float currentLat = 56.0528;
+float currentLon = 12.6932;
+
+int currentSats = 0;
+bool gpsHasFix = false;
 
 // Erythemal Action Spectrum formula för UV-Skala
 float calculateUVI(float uva, float uvb) {
@@ -112,18 +116,6 @@ void setup() { // Första koden som kör
     }
   }
 
-  RtcDateTime now = Rtc.GetDateTime();
-  if (!wasError("setup GetDateTime")) {
-    if (now < compiled) {
-      Serial.println("RTC är äldre än compile tiden, uppdaterar DateTime");
-      Rtc.SetDateTime(compiled);
-    } else if (now > compiled) {
-      Serial.println("RTC är nyare än compile tiden, detta är normalt");
-    } else if (now == compiled) {
-      Serial.println("RTC är samma som compile tiden, troligtvis normalt");
-    }
-  }
-
   Rtc.Enable32kHzPin(false);
   wasError("setup Enable32kHzPin");
   Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone);
@@ -145,51 +137,42 @@ void setup() { // Första koden som kör
 }
 
 void SetTimeFromSerial() { // Möjlighet för att ersätta nuvarande "Compile Tid" till den riktiga tiden (används mest för sekundvis). Behövs bara användas 1 gång, sedan sparas datan
-  if (Serial.available() >= 6) {
-    char input[7];
-    for (int i = 0; i < 6; i++) {
-      input[i] = Serial.read();
+  static String input = "";
+
+  while (Serial.available()) {
+    char c = Serial.read();
+
+    if (isDigit(c)) {
+      input += c;
     }
-    input[6] = '\0';
 
-    uint8_t hour = (input[0] - '0') * 10 + (input[1] - '0');
-    uint8_t minute = (input[2] - '0') * 10 + (input[3] - '0');
-    uint8_t second = (input[4] - '0') * 10 + (input[5] - '0');
+    if (input.length() == 6) {
+      int hour   = input.substring(0,2).toInt();
+      int minute = input.substring(2,4).toInt();
+      int second = input.substring(4,6).toInt();
 
-    RtcDateTime now = Rtc.GetDateTime();
+      RtcDateTime now = Rtc.GetDateTime();
+      Rtc.SetDateTime(RtcDateTime(now.Year(), now.Month(), now.Day(), hour, minute, second));
 
-    RtcDateTime newTime(
-      now.Year(),
-      now.Month(),
-      now.Day(),
-      hour,
-      minute,
-      second
-    );
+      Serial.print("Ny tid satt: ");
+      printDateTime(Rtc.GetDateTime());
+      Serial.println();
 
-    Rtc.SetDateTime(newTime);
-
-    Serial.println("Ny Tid Satt!");
-    printDateTime(newTime);
-    Serial.println();
+      input = ""; // reset
+    }
   }
 }
 
-void drawDisplay(gps_fix fix, RtcDateTime now, RtcTemperature temp, float uvi) { //OLED Display kod
-  float lat = fix.valid.location ? fix.latitude() : 56.0528;
-  float lon = fix.valid.location ? fix.longitude() : 16.6932;
 
+void drawDisplay(RtcDateTime now, RtcTemperature temp, float uvi) { //OLED Display kod
   char dtString[26];
   formatDateTime(now, dtString, sizeof(dtString));
 
   display.clearDisplay();
   display.setCursor(0, 0);
 
-  display.print("LAT: ");
-  display.println(lat, 4);
-
-  display.print("LON: ");
-  display.println(lon, 4);
+  display.print("LAT: "); display.println(currentLat, 4);
+  display.print("LON: "); display.println(currentLon, 4);
 
   display.print("UV Index: ");
   display.println(uvi, 1);
@@ -201,37 +184,42 @@ void drawDisplay(gps_fix fix, RtcDateTime now, RtcTemperature temp, float uvi) {
   display.println(dtString);
 
   display.setCursor(0, 54);
-  if (fix.valid.location) display.print("GPS OK ");
-  else display.print("GPS... ");
-  display.print("|");
-  if (uvi > 0) display.print("UV OK");
-  else display.print("UV ?");
+  if (gpsHasFix) display.print("GPS OK ");
+  else display.print("GPS...");
+  display.print(" | UV ");
+  display.print(uvi > 0 ? "OK" : "?");
   
   display.display();
 }
  
 void loop() { // Kod som kör oändligt lång tid
-  static gps_fix fix;
   static unsigned long lastUpdate = 0;
   static float uvi = 0;
 
   // NEO-6M GPS, läser av GPS-koordinater
-  while (gps.available(gpsPort)) {
-    fix = gps.read();
+  while (gpsPort.available() > 0) {
+    gps.encode(gpsPort.read());
+  }
 
-    if (fix.valid.location) {
-      Serial.print("GPS OK  Lat: ");
-      Serial.print(fix.latitude(), 6);
-      Serial.print("  Lon: ");
-      Serial.println(fix.longitude(), 6);
-    } else {
+  if (gps.location.isUpdated()) {
+    currentLat = gps.location.lat();
+    currentLon = gps.location.lng();
+    gpsHasFix = true;
+
+    Serial.print("GPS OK  Lat: ");
+    Serial.print(currentLat, 6);
+    Serial.print(" Lon: ");
+    Serial.println(currentLon, 6);
+  }
+
+  if (gps.satellites.isUpdated()) {
+    currentSats = gps.satellites.value();
+    Serial.print("Satelliter: ");
+    Serial.println(currentSats);
+  }
+
+  if (!gpsHasFix) {
     Serial.println("GPS söker satelliter...");
-    }
-
-    if (fix.valid.satellites) {
-      Serial.print("Satelliter: ");
-      Serial.println(fix.satellites);
-    }
   }
 
   RtcDateTime now = Rtc.GetDateTime();
@@ -260,7 +248,7 @@ void loop() { // Kod som kör oändligt lång tid
     Serial.print("  UVI: ");
     Serial.println(uvi);
   }
-  drawDisplay(fix, now, temp, uvi);
+  drawDisplay(now, temp, uvi);
   SetTimeFromSerial();
 }
 
