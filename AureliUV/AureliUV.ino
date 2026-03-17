@@ -17,7 +17,8 @@ OBS! För att ersätta tiden måste du använda dig av "NO LINE ENDING" i serial
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include <RtcDS3231.h>
-#include <SparkFun_AS7331.h>
+#include <AS7331.h>
+#include <math.h>
 
 SoftwareSerial gpsPort(8, 9); // RX, TX
 TinyGPSPlus gps;
@@ -28,7 +29,7 @@ TinyGPSPlus gps;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-SfeAS7331ArdI2C myUV;
+AS7331 mySensor(0x74);
 
 RtcDS3231<TwoWire> Rtc(Wire);
 
@@ -38,8 +39,8 @@ unsigned long lastRtcPrint = 0;
 const unsigned long RtcPrintInterval = 500;
 
 // temporära koordinater som används för uppstart
-float currentLat = 56.0528;
-float currentLon = 12.6932;
+float currentLat = 57.7068;
+float currentLon = 11.9542;
 
 int currentSats = 0;
 bool gpsHasFix = false;
@@ -97,6 +98,13 @@ void setup() { // Första koden som kör
   Serial.print(__DATE__);
   Serial.println(__TIME__);
 
+  if (mySensor.begin() == false)
+  {
+    Serial.print("invalid address: ");
+    Serial.println(mySensor.getAddress(), HEX);
+    while (1);
+  }
+
   RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
   printDateTime(compiled);
   Serial.println();
@@ -130,10 +138,10 @@ void setup() { // Första koden som kör
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
 
-  myUV.begin();
-  delay(10);
-  myUV.setGain(2);
-  myUV.setConversionTime(50);
+  mySensor.powerUp();
+  mySensor.setConversionTime(AS7331_CONV_4096);  // just make it a bit slow
+
+  mySensor.startMeasurement();
 }
 
 void SetTimeFromSerial() { // Möjlighet för att ersätta nuvarande "Compile Tid" till den riktiga tiden (används mest för sekundvis). Behövs bara användas 1 gång, sedan sparas datan
@@ -220,6 +228,7 @@ void loop() { // Kod som kör oändligt lång tid
 
   if (!gpsHasFix) {
     Serial.println("GPS söker satelliter...");
+    delay(1000);
   }
 
   RtcDateTime now = Rtc.GetDateTime();
@@ -232,21 +241,29 @@ void loop() { // Kod som kör oändligt lång tid
     Serial.println();
   }
 
-  if (millis() - lastUpdate >= interval) { // Delay på ca 50ms för UV-beräkning
+  if (millis() - lastUpdate >= interval) {
     lastUpdate = millis();
-    myUV.prepareMeasurement();
-    delay(myUV.getConversionTimeMillis() + 5);
-    myUV.readAllUV();
-    float uva = myUV.getUVA();
-    float uvb = myUV.getUVB();
-    uvi = calculateUVI(uva, uvb);
 
-    Serial.print("UVA: ");
-    Serial.print(uva);
-    Serial.print("  UVB: ");
-    Serial.print(uvb);
-    Serial.print("  UVI: ");
-    Serial.println(uvi);
+    if (mySensor.conversionReady()) {
+      // Läs in råvärdena från sensorn
+      float uvaRaw = mySensor.getRawUVA();
+      float uvbRaw = mySensor.getRawUVB();
+
+      // Omvandla till μW/cm² med grov responsfaktor
+      const float UVA_RESP = 400.0; 
+      const float UVB_RESP = 50.0;
+
+      float uva_mw = uvaRaw / UVA_RESP;
+      float uvb_mw = uvbRaw / UVB_RESP;
+
+      // Beräkna UVI med funktion
+      uvi = calculateUVI(uva_mw, uvb_mw);
+      Serial.print("Calculated UVI:\t");
+      Serial.println(uvi);
+
+      // Starta nästa mätning
+      mySensor.startMeasurement();
+    }
   }
   drawDisplay(now, temp, uvi);
   SetTimeFromSerial();
